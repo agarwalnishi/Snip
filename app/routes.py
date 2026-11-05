@@ -1,6 +1,7 @@
+import hashlib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +20,10 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def url_hash(url: str) -> str:
+    return hashlib.sha256(url.encode()).hexdigest()
+
+
 def to_response(link: Link) -> ShortenResponse:
     return ShortenResponse(
         code=link.code,
@@ -29,11 +34,21 @@ def to_response(link: Link) -> ShortenResponse:
 
 
 @router.post("/shorten", response_model=ShortenResponse, status_code=201)
-async def shorten(body: ShortenRequest, session: AsyncSession = Depends(get_session)):
+async def shorten(body: ShortenRequest, response: Response,
+                  session: AsyncSession = Depends(get_session)):
     long_url = str(body.url)
+    h = url_hash(long_url)
+
+    # seen this URL before? return the existing code
+    existing = await session.scalar(
+        select(Link).where(Link.url_hash == h, Link.is_custom.is_(False), Link.expires_at.is_(None))
+    )
+    if existing:
+        response.status_code = 200
+        return to_response(existing)
 
     for _ in range(5):
-        link = Link(code=random_code(), long_url=long_url, expires_at=None)
+        link = Link(code=random_code(), long_url=long_url, url_hash=h, expires_at=None)
         session.add(link)
         try:
             await session.commit()
