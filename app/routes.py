@@ -1,12 +1,13 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import cache
 from app.base62 import random_code
 from app.config import settings
 from app.db import get_session
@@ -77,10 +78,23 @@ async def shorten(body: ShortenRequest, response: Response,
 
 
 @router.get("/{code}")
-async def redirect(code: str, session: AsyncSession = Depends(get_session)):
+async def redirect(code: str, request: Request, session: AsyncSession = Depends(get_session)):
+    r = request.app.state.redis
+
+    # 1. try the cache first
+    if settings.cache_enabled:
+        cached = await cache.get(r, code)
+        if cached is not None:
+            return RedirectResponse(cached, status_code=302)
+
+    # 2. cache miss: ask Postgres
     link = await session.scalar(select(Link).where(Link.code == code))
     if link is None:
         raise HTTPException(404, "not found")
     if link.expires_at and link.expires_at <= now():
         raise HTTPException(410, "link expired")
+
+    # 3. remember the answer for next time
+    if settings.cache_enabled:
+        await cache.set_link(r, code, link.long_url, link.expires_at, settings.cache_ttl)
     return RedirectResponse(link.long_url, status_code=302)
