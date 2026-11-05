@@ -108,3 +108,18 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
         await cache.set_link(r, code, link.long_url, link.expires_at, settings.cache_ttl)
     await record_click(r, code)
     return RedirectResponse(link.long_url, status_code=302)
+
+
+
+@router.get("/stats/{code}")
+async def stats(code: str, request: Request, session: AsyncSession = Depends(get_session)):
+    link = await session.scalar(select(Link).where(Link.code == code))
+    if link is None:
+        raise HTTPException(404, "not found")
+    pending = await request.app.state.redis.hget("clicks:pending", code)
+    return {
+        "code": code,
+        "long_url": link.long_url,
+        "clicks": link.clicks + int(pending or 0),
+        "created_at": link.created_at,
+    }
