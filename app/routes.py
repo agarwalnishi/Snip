@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import cache
 from app.clicks import record_click
+from app.ratelimit import rate_limit
 from app.base62 import random_code
 from app.config import settings
 from app.db import get_session
@@ -36,7 +37,8 @@ def to_response(link: Link) -> ShortenResponse:
     )
 
 
-@router.post("/shorten", response_model=ShortenResponse, status_code=201)
+@router.post("/shorten", response_model=ShortenResponse, status_code=201,
+             dependencies=[Depends(rate_limit)])
 async def shorten(body: ShortenRequest, request: Request, response: Response,
                   session: AsyncSession = Depends(get_session)):
     r = request.app.state.redis
