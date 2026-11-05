@@ -1,4 +1,8 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +13,10 @@ from app.models import Link
 from app.schemas import ShortenRequest, ShortenResponse
 
 router = APIRouter()
+
+
+def now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def to_response(link: Link) -> ShortenResponse:
@@ -34,3 +42,11 @@ async def shorten(body: ShortenRequest, session: AsyncSession = Depends(get_sess
             await session.rollback()
 
     raise HTTPException(500, "could not allocate a code")
+
+
+@router.get("/{code}")
+async def redirect(code: str, session: AsyncSession = Depends(get_session)):
+    link = await session.scalar(select(Link).where(Link.code == code))
+    if link is None:
+        raise HTTPException(404, "not found")
+    return RedirectResponse(link.long_url, status_code=302)
