@@ -84,12 +84,16 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
     # 1. try the cache first
     if settings.cache_enabled:
         cached = await cache.get(r, code)
+        if cached == cache.MISSING:
+            raise HTTPException(404, "not found")
         if cached is not None:
             return RedirectResponse(cached, status_code=302)
 
     # 2. cache miss: ask Postgres
     link = await session.scalar(select(Link).where(Link.code == code))
     if link is None:
+        if settings.cache_enabled:
+            await cache.set_missing(r, code, settings.negative_ttl)
         raise HTTPException(404, "not found")
     if link.expires_at and link.expires_at <= now():
         raise HTTPException(410, "link expired")
