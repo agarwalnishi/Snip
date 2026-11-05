@@ -36,8 +36,9 @@ def to_response(link: Link) -> ShortenResponse:
 
 
 @router.post("/shorten", response_model=ShortenResponse, status_code=201)
-async def shorten(body: ShortenRequest, response: Response,
+async def shorten(body: ShortenRequest, request: Request, response: Response,
                   session: AsyncSession = Depends(get_session)):
+    r = request.app.state.redis
     long_url = str(body.url)
     expires_at = now() + timedelta(minutes=body.expires_in_minutes) if body.expires_in_minutes else None
 
@@ -52,6 +53,7 @@ async def shorten(body: ShortenRequest, response: Response,
         except IntegrityError:
             await session.rollback()
             raise HTTPException(409, "alias already taken")
+        await cache.invalidate(r, link.code)
         return to_response(link)
 
     h = url_hash(long_url)
@@ -70,6 +72,7 @@ async def shorten(body: ShortenRequest, response: Response,
         session.add(link)
         try:
             await session.commit()
+            await cache.invalidate(r, link.code)
             return to_response(link)
         except IntegrityError:
             await session.rollback()
