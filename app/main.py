@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.routes import router
 from app import models  # noqa: F401
 from app.config import settings
 from app.db import Base, get_session, make_engine
@@ -26,3 +27,5 @@ app = FastAPI(title="Snip", lifespan=lifespan)
 async def health(session: AsyncSession = Depends(get_session)):
     await session.execute(text("SELECT 1"))
     return {"status": "ok"}
+
+app.include_router(router)
