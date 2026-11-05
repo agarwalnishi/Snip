@@ -8,8 +8,7 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url: str):
-    return create_async_engine(url, pool_size=10, max_overflow=20)
-
+        return create_async_engine(url, pool_size=5, max_overflow=10)
 
 async def get_session(request: Request):
     async with request.app.state.sessionmaker() as session:
