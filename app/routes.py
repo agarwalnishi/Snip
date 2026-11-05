@@ -14,6 +14,7 @@ from app.models import Link
 from app.schemas import ShortenRequest, ShortenResponse
 
 router = APIRouter()
+RESERVED = {"health", "docs", "redoc", "openapi.json", "shorten", "stats"}
 
 
 def now() -> datetime:
@@ -37,6 +38,20 @@ def to_response(link: Link) -> ShortenResponse:
 async def shorten(body: ShortenRequest, response: Response,
                   session: AsyncSession = Depends(get_session)):
     long_url = str(body.url)
+
+    # custom alias: the user picked the code
+    if body.alias:
+        if body.alias.lower() in RESERVED:
+            raise HTTPException(400, "alias is reserved")
+        link = Link(code=body.alias, long_url=long_url, is_custom=True, expires_at=None)
+        session.add(link)
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(409, "alias already taken")
+        return to_response(link)
+
     h = url_hash(long_url)
 
     # seen this URL before? return the existing code
