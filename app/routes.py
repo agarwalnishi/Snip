@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import cache
+from app.clicks import record_click
 from app.base62 import random_code
 from app.config import settings
 from app.db import get_session
@@ -90,6 +91,7 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
         if cached == cache.MISSING:
             raise HTTPException(404, "not found")
         if cached is not None:
+            await record_click(r, code)
             return RedirectResponse(cached, status_code=302)
 
     # 2. cache miss: ask Postgres
@@ -104,4 +106,5 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
     # 3. remember the answer for next time
     if settings.cache_enabled:
         await cache.set_link(r, code, link.long_url, link.expires_at, settings.cache_ttl)
+    await record_click(r, code)
     return RedirectResponse(link.long_url, status_code=302)
