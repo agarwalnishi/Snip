@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 
-from redis.exceptions import ResponseError
+from redis.exceptions import RedisError, ResponseError
 from sqlalchemy import text
 
 PENDING = "clicks:pending"
@@ -16,7 +16,10 @@ FLUSH_SQL = text("""
 
 
 async def record_click(r, code: str) -> None:
-    await r.hincrby(PENDING, code, 1)
+    try:
+        await r.hincrby(PENDING, code, 1)
+    except RedisError:
+        log.warning("redis unavailable, click for %s not counted", code)
 
 
 async def flush_clicks(r, sessionmaker) -> int:
