@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import cache
 from app.clicks import record_click
+from app.metrics import bump
 from app.ratelimit import rate_limit
 from app.base62 import random_code
 from app.config import settings
@@ -17,7 +18,7 @@ from app.models import Link
 from app.schemas import ShortenRequest, ShortenResponse
 
 router = APIRouter()
-RESERVED = {"health", "docs", "redoc", "openapi.json", "shorten", "stats"}
+RESERVED = {"health", "docs", "redoc", "openapi.json", "shorten", "stats", "metrics"}
 
 
 def now() -> datetime:
@@ -57,6 +58,7 @@ async def shorten(body: ShortenRequest, request: Request, response: Response,
             await session.rollback()
             raise HTTPException(409, "alias already taken")
         await cache.invalidate(r, link.code)
+        await bump(r, "links_created")
         return to_response(link)
 
     h = url_hash(long_url)
@@ -76,6 +78,7 @@ async def shorten(body: ShortenRequest, request: Request, response: Response,
         try:
             await session.commit()
             await cache.invalidate(r, link.code)
+            await bump(r, "links_created")
             return to_response(link)
         except IntegrityError:
             await session.rollback()
@@ -90,7 +93,9 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
     # 1. try the cache first
     if settings.cache_enabled:
         cached = await cache.get(r, code)
+        await bump(r, "cache_hits" if cached is not None else "cache_misses")
         if cached == cache.MISSING:
+            await bump(r, "not_found")
             raise HTTPException(404, "not found")
         if cached is not None:
             await record_click(r, code)
@@ -101,6 +106,7 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
     if link is None:
         if settings.cache_enabled:
             await cache.set_missing(r, code, settings.negative_ttl)
+        await bump(r, "not_found")
         raise HTTPException(404, "not found")
     if link.expires_at and link.expires_at <= now():
         raise HTTPException(410, "link expired")
@@ -110,8 +116,6 @@ async def redirect(code: str, request: Request, session: AsyncSession = Depends(
         await cache.set_link(r, code, link.long_url, link.expires_at, settings.cache_ttl)
     await record_click(r, code)
     return RedirectResponse(link.long_url, status_code=302)
-
-
 
 @router.get("/stats/{code}")
 async def stats(code: str, request: Request, session: AsyncSession = Depends(get_session)):
