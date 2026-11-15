@@ -17,7 +17,7 @@ from app.models import Link
 from app.schemas import ShortenRequest, ShortenResponse
 
 router = APIRouter()
-RESERVED = {"health", "docs", "redoc", "openapi.json", "shorten", "stats"}
+RESERVED = {"health", "docs", "redoc", "openapi.json", "shorten", "stats", "metrics"}
 
 
 def now() -> datetime:
