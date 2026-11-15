@@ -6,6 +6,8 @@ import redis.asyncio as redis
 from fastapi import Depends, FastAPI, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from fastapi.responses import PlainTextResponse
+from app.metrics import snapshot, to_prometheus
 
 from app import models  # noqa: F401
 from app.clicks import flush_clicks, flush_loop
@@ -43,5 +45,9 @@ async def health(request: Request, session: AsyncSession = Depends(get_session))
     await request.app.state.redis.ping()
     return {"status": "ok"}
 
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics(request: Request):
+    counts = await snapshot(request.app.state.redis)
+    return to_prometheus(counts)
 
 app.include_router(router)
